@@ -41,11 +41,13 @@ pub fn rope(y: &mut Tensor<f32>, start_pos: usize, theta: f32) {
 // y = softmax(mask(x))
 pub fn masked_softmax(y: &mut Tensor<f32>) {
     let ndim = y.shape().len();
+    // 确保结果tensor维度大于等于2
     assert!(ndim >= 2);
-    let seq_len = y.shape()[ndim - 2];
+    let seq_len = y.shape()[ndim - 2];      
     let total_seq_len = y.shape()[ndim - 1];
     let batch = y.size() / (seq_len * total_seq_len);
     let data = unsafe { y.data_mut() };
+
     for b in 0..batch {
         let base = b * seq_len * total_seq_len;
         for i in 0..seq_len {
@@ -64,17 +66,49 @@ pub fn masked_softmax(y: &mut Tensor<f32>) {
                 })
                 .sum::<f32>();
 
+            // 创造切片之后的闭包函数操作
             (0..boundary).for_each(|j| data[offset + j] /= sum);
             (boundary..total_seq_len).for_each(|j| data[offset + j] = 0.0);
         }
     }
 }
 
+
 pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: f32) {
-    todo!("实现 rms_norm，计算前做一些必要的检查会帮助你后续调试")
+    // todo!("实现 rms_norm, 计算前做一些必要的检查会帮助你后续调试")
+    let shape = x.shape();
+    let last_dim = shape[shape.len() - 1];
+    let batch_size = x.size() / last_dim;
+    
+    assert!(x.size() == y.size());
+    assert!(w.size() == last_dim);
+
+    // x_data等将tensor全部转换到一维上
+    let x_data = x.data();
+    let y_data = unsafe { y.data_mut() };
+    let w_data = w.data();
+
+    // 此处以行进行遍历
+    for b in 0..batch_size {
+        let start = b * last_dim;
+        let end = start + last_dim;
+
+        let mean_square = x_data[start..end]
+            .iter()
+            .map(|&val| val * val)
+            .sum::<f32>() / last_dim as f32;
+
+        let rms = (mean_square + epsilon).sqrt();
+
+        for i in 0..last_dim {
+            y_data[start + i] = w_data[i] * (x_data[start + i] / rms);
+        }
+    }
 }
 
 // y = silu(x) * y
+// silu(x) = sigmoid(x) * x
+// sigmoid(x) = 1 / (1 + exp(-x))
 // hint: this is an element-wise operation
 pub fn swiglu(y: &mut Tensor<f32>, x: &Tensor<f32>) {
     // let len = y.size();
@@ -83,7 +117,18 @@ pub fn swiglu(y: &mut Tensor<f32>, x: &Tensor<f32>) {
     // let _y = unsafe { y.data_mut() };
     // let _x = x.data();
 
-    todo!("实现 silu，这里给了一些前期准备工作的提示，你可以参考")
+    // todo!("实现 silu，这里给了一些前期准备工作的提示，你可以参考")
+    let len = y.size();
+    assert!(len == x.size());
+
+    let y_data = unsafe { y.data_mut() };
+    let x_data = x.data();
+
+    for i in 0..len {
+        let sigmoid = 1.0 / (1.0 + (-x_data[i]).exp());
+        let silu = sigmoid * x_data[i];
+        y_data[i] *= silu;
+    }
 }
 
 // C = beta * C + alpha * A @ B^T
